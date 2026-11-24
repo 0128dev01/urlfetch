@@ -1,0 +1,9 @@
+data/
+__pycache__/
+*.pyc
+_js/
+_inspect_*.py
+_try_*.py
+_extract_*.py
+_scan_*.py
+_buildManifest.js

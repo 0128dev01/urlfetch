@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Link</title>
+    <link rel="stylesheet" href="/static/styles.css?v=company46" />
+    <script>
+      (function () {
+        const theme = localStorage.getItem("joblink-theme") === "night" ? "night" : "day";
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="container">
+    <header class="top">
+      <div>
+        <h1>Job Link</h1>
+        <p class="sub">Start loads every recommended job in your selected period. After that the button becomes Update to fetch new links. LinkedIn apply links are sent to Applied.</p>
+      </div>
+      <div class="top-actions">
+        <button id="theme-toggle" class="ghost theme-toggle" type="button" aria-label="Switch to night style" title="Night">
+          <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 14.3A8.5 8.5 0 0 1 9.7 3 7.5 7.5 0 1 0 21 14.3Z" fill="currentColor"/>
+          </svg>
+          <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.2" fill="currentColor"/>
+            <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.1 5.1l1.6 1.6M17.3 17.3l1.6 1.6M5.1 18.9l1.6-1.6M17.3 6.7l1.6-1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+          </svg>
+        </button>
+        <button id="join-jobright" class="ghost" type="button">Join in Jobright</button>
+        <span id="session" class="badge" hidden>Connected</span>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <div class="workspace-main">
+        <section class="controls">
+          <div class="setup-bar">
+            <label>
+              Company applied
+              <span class="days-field">
+                <input id="company-apply-days" type="text" inputmode="numeric" maxlength="3" value="60" />
+                <span>days</span>
+              </span>
+            </label>
+            <label>
+              Sort
+              <select id="sort">
+                <option value="recommended">Recommended</option>
+                <option value="match">Match</option>
+                <option value="newest">Newest</option>
+                <option value="company">Company</option>
+                <option value="title">Title</option>
+              </select>
+            </label>
+            <label>
+              From
+              <input id="date-from" type="date" />
+            </label>
+            <label>
+              To
+              <input id="date-to" type="date" />
+            </label>
+            <button id="date-clear" class="ghost" type="button">All dates</button>
+            <button id="filters-toggle" class="ghost filters-toggle" type="button" aria-expanded="false">Jobright filters</button>
+          </div>
+          <section id="filters" class="filters" hidden>
+            <div class="filter-edit-row">
+              <label>
+                Posted date
+                <select id="filter-days">
+                  <option value="1">Past 1 day</option>
+                  <option value="3">Past 3 days</option>
+                  <option value="7">Past 7 days</option>
+                  <option value="14">Past 14 days</option>
+                  <option value="30">Past 30 days</option>
+                </select>
+              </label>
+              <button id="filter-save" class="ghost" type="button">Save posted date</button>
+              <label>
+                Jobright order
+                <select id="feed-sort">
+                  <option value="recent">Most recent</option>
+                  <option value="recommended">Recommended</option>
+                </select>
+              </label>
+            </div>
+            <div id="filter-chips" class="filter-chips"></div>
+          </section>
+        </section>
+        <div class="use-bar">
+            <label class="profile-label">
+              Chrome profiles
+              <div class="profile-menu">
+                <div id="profile-field" class="profile-field" tabindex="0" aria-haspopup="listbox" aria-expanded="false">
+                  <div id="profile-chips" class="profile-chips"></div>
+                  <span id="profile-placeholder" class="profile-placeholder">Select profiles</span>
+                  <button id="profile-btn" class="profile-add-btn" type="button" aria-label="Add Chrome profile">+</button>
+                </div>
+                <div id="profile-list" class="profile-list" role="listbox" hidden></div>
+                <select id="profile" hidden></select>
+              </div>
+            </label>
+            <label class="link-host-label">
+              Posted link
+              <div class="link-host-menu">
+                <button id="link-host-btn" class="link-host-btn" type="button" aria-haspopup="listbox" aria-expanded="false">All posted links</button>
+                <div id="link-host-list" class="link-host-list" hidden>
+                  <div class="link-host-search-wrap">
+                    <input id="link-host-search" type="search" placeholder="Search posted links" autocomplete="off" spellcheck="false" aria-label="Search posted links" />
+                  </div>
+                  <div id="link-host-options" class="link-host-options" role="listbox"></div>
+                </div>
+                <select id="link-host" class="link-host-select" hidden></select>
+              </div>
+            </label>
+            <button id="link-host-clear" class="ghost" type="button" hidden>Clear</button>
+            <label class="open-label">
+              Bulk open
+              <span class="open-field">
+                <input id="bulk-count" class="bulk-count-input" type="text" inputmode="numeric" maxlength="2" value="10" aria-label="Number of links to open" />
+                <button id="bulk-open" class="ok" type="button">Open</button>
+              </span>
+            </label>
+            <div class="run-cluster">
+              <div class="start-wrap">
+                <button id="start" class="primary start-btn" type="button"><span id="start-label">Start</span><input id="update-eta" class="update-eta-input" type="text" maxlength="7" spellcheck="false" hidden /></button>
+              </div>
+              <button id="stop" class="ghost" type="button" disabled>Stop</button>
+            </div>
+          </div>
+        <section class="list-board">
+          <p id="note" class="note"></p>
+          <p id="hidden" class="note"></p>
+          <div class="list-card">
+            <section class="table-wrap">
+              <div class="table-head">
+                <nav class="tabs" aria-label="Job lists">
+                  <button data-tab="new" aria-current="true" type="button">New <span id="count-new" class="tab-count">0</span></button>
+                  <button data-tab="opened" type="button">Opened <span id="count-opened" class="tab-count">0</span></button>
+                  <button data-tab="applied" type="button">Applied <span id="count-applied" class="tab-count">0</span></button>
+                </nav>
+                <input id="job-search" class="job-search" type="search" placeholder="Search title or company" autocomplete="off" spellcheck="false" />
+                <label class="page-size-label" aria-label="Page size">
+                  <span class="page-size-field">
+                    <button type="button" class="page-size-preset" data-page-size="10">10</button>
+                    <button type="button" class="page-size-preset" data-page-size="20">20</button>
+                    <button type="button" class="page-size-preset" data-page-size="30">30</button>
+                    <button type="button" class="page-size-preset" data-page-size="40">40</button>
+                    <button type="button" class="page-size-preset" data-page-size="0">All</button>
+                    <input id="page-size" type="text" inputmode="numeric" maxlength="4" value="20" aria-label="Page size" />
+                  </span>
+                </label>
+              </div>
+              <div id="list"></div>
+            </section>
+          </div>
+        </section>
+      </div>
+      <div class="side-col">
+        <div class="day-cal-wrap">
+          <div id="day-cal" class="day-cal" aria-label="Saved job days"></div>
+        </div>
+        <section class="history-wrap">
+          <h2>History</h2>
+          <div id="history" class="history-list"></div>
+        </section>
+      </div>
+    </section>
+    </div>
+
+    <div id="join-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-card" role="dialog" aria-labelledby="join-modal-title" aria-modal="true">
+        <div class="modal-head">
+          <h2 id="join-modal-title">Join in Jobright</h2>
+          <button id="join-close" class="ghost modal-close" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="connect modal-connect">
+          <label>
+            Jobright email
+            <input id="email" type="email" autocomplete="username" />
+          </label>
+          <label>
+            Jobright password
+            <input id="password" type="password" autocomplete="current-password" />
+          </label>
+          <button id="connect" class="primary" type="button">Connect Jobright</button>
+          <button id="logout" class="ghost ghost-danger" type="button" hidden>Log out</button>
+          <label>
+            Or paste SESSION_ID
+            <input id="session-id" type="text" />
+          </label>
+          <button id="session-btn" class="ghost" type="button">Save session</button>
+        </div>
+        <p id="join-note" class="note"></p>
+      </div>
+    </div>
+    <script src="/static/app.js?v=company46"></script>
+  </body>
+</html>
