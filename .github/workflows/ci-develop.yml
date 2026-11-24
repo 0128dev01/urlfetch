@@ -1,0 +1,22 @@
+name: CI Develop
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop, "feature/**"]
+
+jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          py -3 -m pip install --upgrade pip
+          py -3 -m pip install -r requirements.txt
+
+      - name: Syntax check
+        run: |
+          py -3 -m py_compile app.py store.py db.py crawler.py jobright_client.py chrome_profiles.py
