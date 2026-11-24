@@ -51,8 +51,9 @@ _APPLY_QUEUE: Queue[tuple[str, str]] = Queue()
 _APPLY_SEEN: set[str] = set()
 _APPLY_LOCK = Lock()
 
-
+# test change in dev
 def _jobright_apply_loop() -> None:
+    
     while True:
         email, job_id = _APPLY_QUEUE.get()
         try:
