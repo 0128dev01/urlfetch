@@ -29,7 +29,7 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
-
+#test again
 @app.middleware("http")
 async def account_middleware(request, call_next):
     email = request.cookies.get("joblink_account", "")
