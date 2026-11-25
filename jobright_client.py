@@ -15,7 +15,16 @@ API_BASE = "https://swan-api.jobright.ai"
 SITE_BASE = "https://jobright.ai"
 LINKEDIN_HOSTS = ("linkedin.com", "lnkd.in")
 # Titles containing these keys are auto-sent to Applied like LinkedIn apply links.
-TITLE_SKIP_KEYS = ("lead", "manager", "account", "tech")
+TITLE_SKIP_KEYS = (
+    "account",
+    "lead",
+    "manager",
+    "management",
+    "director",
+    "executive",
+    "execution",
+    "administrator",
+)
 
 HEADERS = {
     "User-Agent": (

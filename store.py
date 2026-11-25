@@ -155,9 +155,9 @@ def _empty_state() -> dict:
         "date_from": "",
         "date_to": "",
         "link_host": "",
+        "link_host_query": "",
         "bulk_open_count": 10,
         "display_count": 20,
-        "company_apply_days": 60,
         "selected_profile_name": "",
         "history": [],
         "history_backfilled": False,
@@ -317,14 +317,65 @@ def ensure_posted_dates() -> dict:
     return update_state(mutate)
 
 
+def _posted_freshness(job: dict) -> tuple[str, str]:
+    """Sort key for posted time: prefer richer publish_time, then posted_date."""
+    publish_time = str(job.get("publish_time") or "").strip()
+    day = posted_date_of(job)
+    return (publish_time, day)
+
+
 def _keep_posted_date(incoming: dict, current: dict) -> dict:
+    """Merge date fields, keeping the latest posted date when the same link is refreshed."""
     merged = dict(incoming)
-    if not merged.get("publish_time") and current.get("publish_time"):
-        merged["publish_time"] = current["publish_time"]
-    if not merged.get("posted") and current.get("posted"):
-        merged["posted"] = current["posted"]
-    merged["posted_date"] = posted_date_of(merged) or posted_date_of(current)
+    if not current:
+        merged["posted_date"] = posted_date_of(merged)
+        return merged
+
+    incoming_fresh = _posted_freshness(incoming)
+    current_fresh = _posted_freshness(current)
+    newer = incoming if incoming_fresh >= current_fresh else current
+    older = current if newer is incoming else incoming
+
+    publish_time = str(newer.get("publish_time") or "").strip() or str(older.get("publish_time") or "").strip()
+    posted = str(newer.get("posted") or "").strip() or str(older.get("posted") or "").strip()
+    if publish_time:
+        merged["publish_time"] = publish_time
+    if posted:
+        merged["posted"] = posted
+    merged["posted_date"] = (
+        posted_date_of({"publish_time": publish_time, "posted": posted})
+        or posted_date_of(newer)
+        or posted_date_of(older)
+    )
     return merged
+
+
+def _sync_same_link_posted_dates(existing: dict, job: dict) -> None:
+    """If another saved job shares this apply link, move its posted date to the latest."""
+    job_id = str(job.get("job_id") or "")
+    url = str(job.get("apply_url") or "").strip()
+    if not url:
+        return
+    for other_id, other in existing.items():
+        if other_id == job_id:
+            continue
+        other_url = str(other.get("apply_url") or "").strip()
+        if not other_url or not urls_match(url, other_url):
+            continue
+        updated = _keep_posted_date(
+            {
+                "publish_time": job.get("publish_time") or "",
+                "posted": job.get("posted") or "",
+                "posted_date": job.get("posted_date") or "",
+            },
+            other,
+        )
+        if updated.get("publish_time"):
+            other["publish_time"] = updated["publish_time"]
+        if updated.get("posted"):
+            other["posted"] = updated["posted"]
+        if updated.get("posted_date"):
+            other["posted_date"] = updated["posted_date"]
 
 
 def _merge_status(job: dict, current: dict) -> dict:
@@ -381,12 +432,14 @@ def upsert_jobs(
                     **incoming,
                     "status": kept[job_id].get("status") or "new",
                 }
+                _sync_same_link_posted_dates(kept, kept[job_id])
                 continue
             kept[job_id] = {
                 **_merge_status(_keep_posted_date(job, current), current),
                 "rank": start_rank + offset,
                 "appeared": False,
             }
+            _sync_same_link_posted_dates(kept, kept[job_id])
             offset += 1
         state["jobs"] = kept
         state["next_position"] = next_position
@@ -427,6 +480,7 @@ def apply_feed_order(jobs: list[dict], start_rank: int, filter_chips: list[str] 
                 "rank": start_rank + offset,
                 "appeared": True if is_new else current.get("appeared", False),
             }
+            _sync_same_link_posted_dates(existing, existing[job_id])
             if is_new:
                 added += 1
         state["jobs"] = existing
@@ -548,114 +602,6 @@ def set_feed_first_page(ids: list[str], recent_order: bool) -> dict:
             feed_recent_order=bool(recent_order),
         )
     )
-
-
-def company_apply_days() -> int:
-    try:
-        days = int(load_state().get("company_apply_days") or 0)
-    except (TypeError, ValueError):
-        days = 0
-    return max(0, min(days, 365))
-
-
-def set_company_apply_days(days: int) -> dict:
-    value = max(0, min(int(days), 365))
-    update_state(
-        lambda state: state.update(
-            company_apply_days=value,
-            company_apply_from="",
-            company_apply_to="",
-        )
-    )
-    result = refresh_company_applied()
-    return {
-        "company_apply_days": value,
-        "marked": len(result["marked"]),
-        "reverted": len(result["reverted"]),
-        "marked_jobs": result["marked"],
-    }
-
-
-def _applied_day(job: dict) -> str:
-    parsed = _parse_job_time(str(job.get("applied_at") or ""))
-    if parsed is not None:
-        if parsed.tzinfo is None:
-            return parsed.strftime("%Y-%m-%d")
-        return local_day(parsed)
-    return posted_date_of(job)
-
-
-def _saved_applied_company_keys(days: int) -> list[str]:
-    if days <= 0:
-        return []
-    cutoff = (local_now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
-    end = local_day()
-    keys: list[str] = []
-    seen: set[str] = set()
-    for job in load_state()["jobs"].values():
-        if job.get("status") != "applied":
-            continue
-        if (job.get("applied_source") or "") == "company-applied":
-            continue
-        day = _applied_day(job)
-        if not day or day < cutoff or day > end:
-            continue
-        key = _fold_company(str(job.get("company") or ""))
-        if key and key not in seen:
-            seen.add(key)
-            keys.append(key)
-    return keys
-
-
-def _matches_saved_company(company: str, keys: list[str], compact_keys: list[str]) -> bool:
-    first = _fold_company(company)
-    if not first:
-        return False
-    packed = first.replace(" ", "")
-    for second, compact in zip(keys, compact_keys):
-        if first == second or first in second or second in first:
-            return True
-        if packed == compact or packed in compact or compact in packed:
-            return True
-    return False
-
-
-def _restore_live_job(job: dict) -> None:
-    job["status"] = "opened" if job.get("opened_at") else "new"
-    job["applied_at"] = ""
-    job["applied_source"] = ""
-    job["jobright_synced"] = False
-
-
-def refresh_company_applied() -> dict[str, list[dict]]:
-    keys = _saved_applied_company_keys(company_apply_days())
-    compact_keys = [key.replace(" ", "") for key in keys]
-    marked: list[dict] = []
-    reverted: list[dict] = []
-
-    def mutate(state: dict) -> None:
-        for job in state["jobs"].values():
-            company = str(job.get("company") or "")
-            matched = bool(keys) and _matches_saved_company(company, keys, compact_keys)
-            source = job.get("applied_source") or ""
-            if source == "company-applied":
-                if not matched:
-                    _restore_live_job(job)
-                    reverted.append(dict(job))
-                continue
-            if job.get("status") == "applied" or not matched:
-                continue
-            job["status"] = "applied"
-            job["applied_at"] = job.get("applied_at") or now()
-            job["applied_source"] = "company-applied"
-            marked.append(dict(job))
-
-    update_state(mutate)
-    return {"marked": marked, "reverted": reverted}
-
-
-def auto_apply_same_company() -> list[dict]:
-    return refresh_company_applied()["marked"]
 
 
 def companies_match(left: str, right: str) -> bool:
@@ -1225,6 +1171,21 @@ def _normalize_host(link_host: str = "") -> str:
     return host
 
 
+def _normalize_host_query(query: str = "") -> str:
+    return str(query or "").strip().lower()
+
+
+def host_matches_filter(host: str, link_host: str = "", link_host_query: str = "") -> bool:
+    host_filter = _normalize_host(link_host)
+    host_query = _normalize_host_query(link_host_query)
+    value = _normalize_host(host)
+    if host_filter:
+        return value == host_filter
+    if host_query:
+        return host_query in value
+    return True
+
+
 def _in_posted_range(job: dict, date_from: str = "", date_to: str = "") -> bool:
     start = (date_from or "").strip()
     end = (date_to or "").strip()
@@ -1325,6 +1286,7 @@ def build_state_view(
     date_from: str = "",
     date_to: str = "",
     link_host: str = "",
+    link_host_query: str = "",
     query: str = "",
     offset: int = 0,
     limit: int | None = None,
@@ -1334,6 +1296,9 @@ def build_state_view(
     tab_key = tab if tab in ("opened", "applied") else "new"
     sort_key = sort or state.get("sort") or "recommended"
     host_filter = _normalize_host(link_host)
+    host_query = _normalize_host_query(link_host_query)
+    if host_filter:
+        host_query = ""
     search = (query or "").strip().lower()
     start = max(0, int(offset or 0))
     # None = all jobs, 0 = all jobs (display All), >0 = page size
@@ -1383,7 +1348,7 @@ def build_state_view(
                 else:
                     real_applied += 1
 
-        matches_host = (not host_filter) or host == host_filter
+        matches_host = host_matches_filter(host, host_filter, host_query)
         if in_range and matches_host:
             shown[status] += 1
 
@@ -1480,6 +1445,7 @@ def jobs_by_tab(
     date_from: str = "",
     date_to: str = "",
     link_host: str = "",
+    link_host_query: str = "",
 ) -> list[dict]:
     return build_state_view(
         tab=tab,
@@ -1487,6 +1453,7 @@ def jobs_by_tab(
         date_from=date_from,
         date_to=date_to,
         link_host=link_host,
+        link_host_query=link_host_query,
         include_jobs=True,
     )["jobs"]
 

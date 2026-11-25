@@ -16,6 +16,7 @@ const state = {
   filtersOpen: false,
   hostItems: [],
   hostQuery: "",
+  linkHostQuery: "",
   jobs: [],
   pageSize: 20,
   shownCount: 20,
@@ -357,23 +358,47 @@ function paintLinkHostOptions() {
   const box = $("link-host-options");
   if (!box) return;
   const selected = $("link-host").value || "";
+  const activeQuery = String(state.linkHostQuery || "").trim().toLowerCase();
   const query = state.hostQuery.trim().toLowerCase();
-  const items = (state.hostItems || []).filter((item) =>
-    (item.host === "" || (item.count || 0) > 0) && hostMatchesQuery(item, query)
-  );
-  if (!items.length) {
+  const items = (state.hostItems || []).filter((item) => {
+    if (query && !item.host) return false;
+    return (item.host === "" || (item.count || 0) > 0) && hostMatchesQuery(item, query);
+  });
+  const matched = query ? matchingHostItems(query) : [];
+  if (!items.length && !matched.length) {
     box.innerHTML = `<div class="link-host-empty">No posted links match.</div>`;
     return;
   }
-  box.innerHTML = items.map((item) => `
-    <button type="button" class="link-host-option${item.host === selected ? " is-active" : ""}" role="option" data-host="${escapeHtml(item.host)}" aria-selected="${item.host === selected}">
-      <span class="link-host-name">${escapeHtml(item.name)}</span>
-      ${hostCountsHtml(item.visited, item.count)}
-    </button>
-  `).join("");
+  const parts = [];
+  if (query && matched.length) {
+    const matchCount = matched.reduce((sum, item) => sum + (item.count || 0), 0);
+    const matchVisited = matched.reduce((sum, item) => sum + (item.visited || 0), 0);
+    const allActive = !selected && activeQuery === query;
+    parts.push(`
+      <button type="button" class="link-host-option link-host-option-all${allActive ? " is-active" : ""}" role="option" data-host-query="${escapeHtml(query)}" aria-selected="${allActive}">
+        <span class="link-host-name">Show all matching links</span>
+        ${hostCountsHtml(matchVisited, matchCount)}
+        <span class="link-host-hint">${matched.length} group${matched.length === 1 ? "" : "s"} · Enter</span>
+      </button>`);
+  }
+  parts.push(
+    ...items.map((item) => `
+      <button type="button" class="link-host-option${item.host === selected ? " is-active" : ""}" role="option" data-host="${escapeHtml(item.host)}" aria-selected="${item.host === selected}">
+        <span class="link-host-name">${escapeHtml(item.name)}</span>
+        ${hostCountsHtml(item.visited, item.count)}
+      </button>`)
+  );
+  box.innerHTML = parts.join("");
 }
 
-function renderLinkHosts(hosts, selected) {
+function matchingHostItems(query) {
+  const text = String(query || "").trim().toLowerCase();
+  return (state.hostItems || []).filter(
+    (item) => item.host && hostMatchesQuery(item, text)
+  );
+}
+
+function renderLinkHosts(hosts, selected, hostQuery = "") {
   const select = $("link-host");
   const list = $("link-host-list");
   const button = $("link-host-btn");
@@ -390,14 +415,29 @@ function renderLinkHosts(hosts, selected) {
   if (selected && !items.some((item) => item.host === selected)) {
     selected = "";
   }
+  const activeQuery = String(hostQuery || "").trim();
+  state.linkHostQuery = activeQuery;
+  if (activeQuery) {
+    state.hostQuery = activeQuery;
+  }
   const current = items.find((item) => item.host === selected) || items[0];
   state.hostItems = items;
   select.innerHTML = items.map((item) => `<option value="${escapeHtml(item.host)}">${escapeHtml(item.name)}</option>`).join("");
   select.value = current.host;
-  button.innerHTML = `<span class="link-host-name">${escapeHtml(current.name)}</span>${hostCountsHtml(current.visited, current.count, true)}`;
+  if (activeQuery && !selected) {
+    const matched = matchingHostItems(activeQuery);
+    const matchCount = matched.reduce((sum, item) => sum + (item.count || 0), 0);
+    const matchVisited = matched.reduce((sum, item) => sum + (item.visited || 0), 0);
+    const label = matched.length
+      ? `All matching · ${activeQuery}`
+      : `No match · ${activeQuery}`;
+    button.innerHTML = `<span class="link-host-name">${escapeHtml(label)}</span>${hostCountsHtml(matchVisited, matchCount, true)}`;
+  } else {
+    button.innerHTML = `<span class="link-host-name">${escapeHtml(current.name)}</span>${hostCountsHtml(current.visited, current.count, true)}`;
+  }
   const clear = $("link-host-clear");
   if (clear) {
-    clear.hidden = !current.host;
+    clear.hidden = !(current.host || activeQuery);
   }
   const search = $("link-host-search");
   if (search && document.activeElement !== search) {
@@ -428,6 +468,8 @@ function renderJobs(payload) {
   }
   if (payload.link_host) {
     hiddenBits.push(`Showing ${jobTotal} links from ${payload.link_host}.`);
+  } else if (payload.link_host_query) {
+    hiddenBits.push(`Showing ${jobTotal} links matching posted-link “${payload.link_host_query}”.`);
   }
   if (payload.counts.real_applied || payload.counts.skipped_applied) {
     const real = payload.counts.real_applied || 0;
@@ -455,9 +497,6 @@ function renderJobs(payload) {
   }
   $("sort").value = payload.sort || "recommended";
   $("feed-sort").value = payload.feed_sort === "recommended" ? "recommended" : "recent";
-  if (document.activeElement !== $("company-apply-days")) {
-    $("company-apply-days").value = String(payload.company_apply_days ?? 60);
-  }
   if (!state.editingPageSize && document.activeElement !== $("page-size")) {
     state.pageSize = pageSizeValue(payload.display_count);
     $("page-size").value = pageSizeLabel(state.pageSize);
@@ -477,7 +516,7 @@ function renderJobs(payload) {
     setNote(crawler.status || "");
   }
   renderFilters(payload.filter_chips || []);
-  renderLinkHosts(payload.link_hosts || [], payload.link_host || "");
+  renderLinkHosts(payload.link_hosts || [], payload.link_host || "", payload.link_host_query || "");
   renderCalendar(payload);
   renderHistory(payload.history || []);
   fitHistoryPane();
@@ -486,7 +525,7 @@ function renderJobs(payload) {
     state.tab,
     payload.date_from || "",
     payload.date_to || "",
-    payload.link_host || "",
+    payload.link_host || payload.link_host_query || "",
     payload.sort || "",
     String(state.jobQuery || "").trim().toLowerCase(),
   ].join("|");
@@ -498,6 +537,8 @@ function renderJobs(payload) {
     ? "No jobs match this title or company search."
     : payload.link_host
       ? `No jobs from ${payload.link_host}.`
+      : payload.link_host_query
+        ? `No jobs match posted-link “${payload.link_host_query}”.`
       : ranged
         ? "No jobs posted in this date range."
         : "No jobs in this list yet.";
@@ -1091,10 +1132,13 @@ $("update-eta").addEventListener("blur", async () => {
   }
 });
 
-async function applyLinkHost(host) {
+async function applyLinkHost(host, query = "") {
+  const body = host
+    ? { host: host || "", query: "" }
+    : { host: "", query: query || "" };
   await api("/api/link-host", {
     method: "POST",
-    body: JSON.stringify({ host: host || "" }),
+    body: JSON.stringify(body),
   });
   await refreshState();
 }
@@ -1125,8 +1169,17 @@ $("link-host-btn").addEventListener("click", (event) => {
 });
 
 $("link-host-list").addEventListener("click", (event) => {
+  const allMatching = event.target.closest("[data-host-query]");
+  if (allMatching) {
+    const query = String(allMatching.dataset.hostQuery || "").trim();
+    closeLinkHostList();
+    applyLinkHost("", query);
+    return;
+  }
   const option = event.target.closest("[data-host]");
   if (!option) return;
+  state.hostQuery = "";
+  state.linkHostQuery = "";
   closeLinkHostList();
   applyLinkHost(option.dataset.host || "");
 });
@@ -1138,16 +1191,22 @@ $("link-host-search").addEventListener("input", (event) => {
 $("link-host-search").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
-    const first = $("link-host-options").querySelector("[data-host]");
-    if (first) {
-      closeLinkHostList();
-      applyLinkHost(first.dataset.host || "");
+    const query = String(event.target.value || state.hostQuery || "").trim();
+    closeLinkHostList();
+    if (!query) {
+      state.linkHostQuery = "";
+      applyLinkHost("");
+      return;
     }
+    // Show every job link from every matching host group in the table.
+    applyLinkHost("", query);
   }
 });
 
 $("link-host").addEventListener("change", (event) => applyLinkHost(event.target.value));
 $("link-host-clear").addEventListener("click", () => {
+  state.hostQuery = "";
+  state.linkHostQuery = "";
   closeLinkHostList();
   applyLinkHost("");
 });
@@ -1217,55 +1276,6 @@ $("session-btn").addEventListener("click", async () => {
     await refreshState();
   } catch (error) {
     setJoinNote(error.message, true);
-  }
-});
-
-function companyApplyDays() {
-  const raw = Number($("company-apply-days").value);
-  if (!Number.isFinite(raw)) {
-    return 0;
-  }
-  return Math.max(0, Math.min(365, Math.round(raw)));
-}
-
-async function saveCompanyApplyDays() {
-  const days = companyApplyDays();
-  $("company-apply-days").value = String(days);
-  const result = await api("/api/company-apply-days", {
-    method: "POST",
-    body: JSON.stringify({ days }),
-  });
-  $("company-apply-days").value = String(result.company_apply_days ?? days);
-  await refreshState();
-  const marked = Number(result.marked || 0);
-  const reverted = Number(result.reverted || 0);
-  if (!days) {
-    setNote(
-      reverted
-        ? `Company applied is off. Restored ${reverted} links from the saved Applied list.`
-        : "Company applied is off. The list was not changed."
-    );
-    return;
-  }
-  setNote(
-    `Checked saved Applied jobs from the past ${days} days. `
-      + `Sent ${marked} links to Applied`
-      + (reverted ? `, restored ${reverted}.` : ".")
-  );
-}
-
-$("company-apply-days").addEventListener("change", async () => {
-  try {
-    await saveCompanyApplyDays();
-  } catch (error) {
-    setNote(error.message, true);
-  }
-});
-
-$("company-apply-days").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    event.target.blur();
   }
 });
 
