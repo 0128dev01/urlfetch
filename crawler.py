@@ -199,10 +199,11 @@ def _queue_jobright_applies(jobs: list[dict]) -> None:
         _queue_jobright_apply(job_id)
 
 
-def _apply_same_company(_session_id: str = "") -> int:
-    result = store.refresh_company_applied()
-    _queue_jobright_applies(result["marked"])
-    return len(result["marked"])
+def _apply_title_filters(_session_id: str = "") -> int:
+    """Re-check saved jobs so title skip keys also catch older New/Opened rows."""
+    marked = store.apply_title_skip_filters()
+    _queue_jobright_applies(marked)
+    return len(marked)
 
 
 def _session() -> str:
@@ -243,7 +244,6 @@ def _full_crawl(session_id: str) -> None:
     empty_pages = 0
     first = True
     linkedin_applied = 0
-    company_applied = 0
     while not _stop.is_set() and position <= MAX_POSITION:
         _set_status(f"Loading recommended jobs at {position}...")
         jobs, linkedin, raw, ordered = _fetch(session_id, position, refresh)
@@ -259,7 +259,6 @@ def _full_crawl(session_id: str) -> None:
             linkedin_applied += _send_linkedin_applied(session_id, linkedin)
             store.upsert_jobs(jobs, position + PAGE_SIZE, 0, chips, first, True)
             first = False
-            company_applied = _apply_same_company(session_id)
         position += PAGE_SIZE
         counts = store.counts()
         extra = (
@@ -267,11 +266,12 @@ def _full_crawl(session_id: str) -> None:
             if linkedin_applied
             else ""
         )
-        if company_applied:
-            extra += f" {company_applied} same-company links sent to Applied."
         _set_status(
             f"Loaded {counts['all']} company links in your selected period.{extra}"
         )
+    title_applied = _apply_title_filters(session_id)
+    if title_applied:
+        linkedin_applied += title_applied
     store.update_state(
         lambda state: state.update(
             has_more=False,
@@ -291,7 +291,6 @@ def _scan_new(session_id: str) -> int:
     empty_new = 0
     empty_pages = 0
     added = 0
-    company_applied = 0
     first_ids: list[str] = []
     recent_mode = False
     stop_reason = "original"
@@ -316,7 +315,6 @@ def _scan_new(session_id: str) -> int:
         _send_linkedin_applied(session_id, linkedin)
         page_added = store.apply_feed_order(jobs, feed_rank, chips)
         added += page_added
-        company_applied = _apply_same_company(session_id)
         feed_rank += len(jobs)
         page_ids = set(_page_ids(ordered))
         if use_first_list and (page_ids & last_first):
@@ -332,8 +330,10 @@ def _scan_new(session_id: str) -> int:
         position += PAGE_SIZE
     if first_ids:
         store.set_feed_first_page(first_ids, recent_mode)
-    company_applied = _apply_same_company(session_id)
-    extra = f" {company_applied} same-company links sent to Applied." if company_applied else ""
+    title_applied = _apply_title_filters(session_id)
+    extra = ""
+    if title_applied:
+        extra += f" {title_applied} title-filtered links sent to Applied."
     if stop_reason == "first-list":
         extra += " Stopped at last first list."
     elif not recent_mode:
@@ -350,7 +350,6 @@ def _loop(email: str = "") -> None:
         _set_status("Starting full recommend crawl...", busy=True)
         _sync_applied(session_id)
         _full_crawl(session_id)
-        _apply_same_company(session_id)
         counts = store.counts()
         _set_status(
             f"All links loaded ({counts['all']} company links). Click Update for new links.",
@@ -513,14 +512,14 @@ def sync_on_start(email: str = "") -> None:
         )
         applied, _hidden = _sync_applied(session_id)
         recent = _read_order_state(session_id)
-        company_applied = _apply_same_company(session_id)
+        title_applied = _apply_title_filters(session_id)
         queued = _queue_unsynced_applied()
         counts = store.counts()
         wanted = "most recent" if store.feed_sort() == "recent" else "recommended"
         seen = "most-recent order" if recent else "not most-recent order"
         extra = ""
-        if company_applied:
-            extra += f" {company_applied} same-company links sent to Applied."
+        if title_applied:
+            extra += f" {title_applied} title-filtered links sent to Applied."
         if queued:
             extra += f" {queued} saved Applied links queued to Jobright."
         _set_status(

@@ -81,9 +81,36 @@ def _queue_jobright_apply(job_id: str) -> None:
 Thread(target=_jobright_apply_loop, name="job-link-apply", daemon=True).start()
 
 
+def _sweep_title_filters_for_all_accounts() -> None:
+    """Apply title skip keys to every local account DB (older saved New rows)."""
+    for path in sql_db.DATA_DIR.iterdir() if sql_db.DATA_DIR.exists() else []:
+        if not path.is_dir():
+            continue
+        db_file = path / "job_link.db"
+        if not db_file.exists() or db_file.stat().st_size < 10_000:
+            continue
+        account = "" if path.name == "_default" else path.name
+        try:
+            store.set_request_email(account)
+            marked = store.apply_title_skip_filters()
+            if marked:
+                print(
+                    f"title-filter sweep ({account or 'default'}): "
+                    f"marked {len(marked)} jobs Applied"
+                )
+        except Exception as exc:
+            print(f"title-filter sweep failed ({account or 'default'}): {exc}")
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     email = (sql_db.read_active_email() or "").strip().lower()
+    # Catch older New/Opened rows across accounts (keywords only filtered new fetches before).
+    try:
+        _sweep_title_filters_for_all_accounts()
+    except Exception as exc:
+        print(f"title-filter startup sweep failed: {exc}")
+    store.set_request_email(email)
     Thread(
         target=crawler.sync_on_start, args=(email,), name="job-link-sync", daemon=True
     ).start()
@@ -130,6 +157,7 @@ class DateBody(BaseModel):
 
 class LinkHostBody(BaseModel):
     host: str = ""
+    query: str = ""
 
 
 class AppliedUrlBody(BaseModel):
@@ -165,10 +193,6 @@ class BulkOpenBody(BaseModel):
 
 class DisplayCountBody(BaseModel):
     count: int = 20
-
-
-class CompanyApplyBody(BaseModel):
-    days: int = 60
 
 
 class FilterBody(BaseModel):
@@ -241,6 +265,7 @@ def state(
         date_from=current.get("date_from") or "",
         date_to=current.get("date_to") or "",
         link_host=current.get("link_host") or "",
+        link_host_query=current.get("link_host_query") or "",
         query=q,
         offset=max(0, int(offset or 0)),
         limit=page_limit,
@@ -262,9 +287,9 @@ def state(
         "timezone": store.local_now().tzname() or "",
         "posted_days": view["posted_days"],
         "link_host": current.get("link_host") or "",
+        "link_host_query": current.get("link_host_query") or "",
         "bulk_open_count": int(current.get("bulk_open_count") or 10),
         "display_count": display_count,
-        "company_apply_days": store.company_apply_days(),
         "feed_sort": store.feed_sort(),
         "feed_recent_order": bool(current.get("feed_recent_order")),
         "history": store.history(),
@@ -415,21 +440,6 @@ def set_update_wait(body: UpdateWaitBody) -> dict:
     }
 
 
-@app.post("/api/company-apply-days")
-def set_company_apply_days(body: CompanyApplyBody) -> dict:
-    result = store.set_company_apply_days(body.days)
-    for job in result.get("marked_jobs") or []:
-        job_id = job.get("job_id") or ""
-        if job_id and not job.get("jobright_synced"):
-            _queue_jobright_apply(job_id)
-    return {
-        "company_apply_days": int(result.get("company_apply_days") or 0),
-        "marked": int(result.get("marked") or 0),
-        "reverted": int(result.get("reverted") or 0),
-        "counts": store.counts(),
-    }
-
-
 @app.post("/api/sort")
 def set_sort(body: SortBody) -> dict:
     allowed = {"recommended", "match", "newest", "company", "title"}
@@ -454,9 +464,14 @@ def set_dates(body: DateBody) -> dict:
     if date_from and date_to and date_from > date_to:
         date_from, date_to = date_to, date_from
     store.update_state(
-        lambda current: current.update(date_from=date_from, date_to=date_to, link_host="")
+        lambda current: current.update(
+            date_from=date_from,
+            date_to=date_to,
+            link_host="",
+            link_host_query="",
+        )
     )
-    return {"date_from": date_from, "date_to": date_to, "link_host": ""}
+    return {"date_from": date_from, "date_to": date_to, "link_host": "", "link_host_query": ""}
 
 
 @app.post("/api/display-count")
@@ -472,8 +487,11 @@ def set_link_host(body: LinkHostBody) -> dict:
     host = (body.host or "").strip().lower()
     if host.startswith("www."):
         host = host[4:]
-    store.update_state(lambda current: current.update(link_host=host))
-    return {"link_host": host}
+    query = (body.query or "").strip().lower()
+    if host:
+        query = ""
+    store.update_state(lambda current: current.update(link_host=host, link_host_query=query))
+    return {"link_host": host, "link_host_query": query}
 
 
 @app.post("/api/profile")
@@ -504,6 +522,7 @@ def jobright_login(body: LoginBody, response: Response) -> dict:
     store.update_state(
         lambda current: current.update(session_id=session_id, email=body.email.strip())
     )
+    store.apply_title_skip_filters()
     return {"ok": True, "email": body.email.strip()}
 
 
@@ -652,6 +671,7 @@ def bulk_open(body: BulkOpenBody) -> dict:
             current.get("date_from") or "",
             current.get("date_to") or "",
             current.get("link_host") or "",
+            current.get("link_host_query") or "",
         )
         if job.get("status") != "applied" and job.get("apply_url")
     ]

@@ -63,9 +63,9 @@ SETTING_KEYS = (
     "date_from",
     "date_to",
     "link_host",
+    "link_host_query",
     "bulk_open_count",
     "display_count",
-    "company_apply_days",
     "selected_profile_name",
     "history_backfilled",
     "feed_first_ids",
@@ -75,8 +75,6 @@ SETTING_KEYS = (
     "last_new_count",
     "last_applied_added",
     "last_applied_marked",
-    "company_apply_from",
-    "company_apply_to",
 )
 
 

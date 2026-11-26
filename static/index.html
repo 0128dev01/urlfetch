@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Job Link</title>
-    <link rel="stylesheet" href="/static/styles.css?v=company46" />
+    <link rel="stylesheet" href="/static/styles.css?v=company49" />
     <script>
       (function () {
         const theme = localStorage.getItem("joblink-theme") === "night" ? "night" : "day";
@@ -38,13 +38,6 @@
       <div class="workspace-main">
         <section class="controls">
           <div class="setup-bar">
-            <label>
-              Company applied
-              <span class="days-field">
-                <input id="company-apply-days" type="text" inputmode="numeric" maxlength="3" value="60" />
-                <span>days</span>
-              </span>
-            </label>
             <label>
               Sort
               <select id="sort">
@@ -109,7 +102,7 @@
                 <button id="link-host-btn" class="link-host-btn" type="button" aria-haspopup="listbox" aria-expanded="false">All posted links</button>
                 <div id="link-host-list" class="link-host-list" hidden>
                   <div class="link-host-search-wrap">
-                    <input id="link-host-search" type="search" placeholder="Search posted links" autocomplete="off" spellcheck="false" aria-label="Search posted links" />
+                    <input id="link-host-search" type="search" placeholder="Search, Enter = all matching groups" autocomplete="off" spellcheck="false" aria-label="Search posted links" />
                   </div>
                   <div id="link-host-options" class="link-host-options" role="listbox"></div>
                 </div>
@@ -198,6 +191,6 @@
         <p id="join-note" class="note"></p>
       </div>
     </div>
-    <script src="/static/app.js?v=company46"></script>
+    <script src="/static/app.js?v=company49"></script>
   </body>
 </html>

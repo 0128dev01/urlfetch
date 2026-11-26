@@ -282,35 +282,6 @@ input[type="date"] { min-width: 150px; }
   padding: 0 16px;
 }
 
-.days-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  min-width: 108px;
-  padding: 0 14px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--input);
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.days-field input {
-  width: 4ch;
-  min-width: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 700;
-}
-
-.days-field input:focus {
-  outline: none;
-}
-
 .top-actions {
   display: flex;
   align-items: center;
@@ -625,6 +596,19 @@ label {
 .link-host-option:hover,
 .link-host-option.is-active {
   background: var(--hover);
+}
+
+.link-host-option-all {
+  font-weight: 700;
+  border-bottom: 1px solid var(--line);
+}
+
+.link-host-hint {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .link-host-name {
