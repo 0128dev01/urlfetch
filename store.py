@@ -10,6 +10,47 @@ from urllib.parse import parse_qs, urlparse
 
 import db as sql_db
 
+# Titles containing these keys are auto-sent to Applied like LinkedIn apply links.
+TITLE_SKIP_KEYS = (
+    "account",
+    "lead",
+    "manager",
+    "manger",
+    "management",
+    "director",
+    "executive",
+    "execution",
+    "administrator",
+    "analyst",
+    "owner",
+)
+
+
+def is_skip_title(title: str | None) -> bool:
+    text = str(title or "").lower()
+    if not text:
+        return False
+    return any(key in text for key in TITLE_SKIP_KEYS)
+
+
+def apply_title_skip_filters() -> list[dict]:
+    """Move already-saved New/Opened jobs with skip titles into Applied."""
+    marked: list[dict] = []
+
+    def mutate(state: dict) -> None:
+        for job in state["jobs"].values():
+            if job.get("status") == "applied":
+                continue
+            if not is_skip_title(job.get("title")):
+                continue
+            job["status"] = "applied"
+            job["applied_at"] = job.get("applied_at") or now()
+            job["applied_source"] = "title-filter"
+            marked.append(dict(job))
+
+    update_state(mutate)
+    return marked
+
 ROOT = sql_db.ROOT
 DATA_DIR = sql_db.DATA_DIR
 STATE_PATH = sql_db.STATE_JSON_PATH

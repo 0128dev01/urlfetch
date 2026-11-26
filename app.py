@@ -81,9 +81,36 @@ def _queue_jobright_apply(job_id: str) -> None:
 Thread(target=_jobright_apply_loop, name="job-link-apply", daemon=True).start()
 
 
+def _sweep_title_filters_for_all_accounts() -> None:
+    """Apply title skip keys to every local account DB (older saved New rows)."""
+    for path in sql_db.DATA_DIR.iterdir() if sql_db.DATA_DIR.exists() else []:
+        if not path.is_dir():
+            continue
+        db_file = path / "job_link.db"
+        if not db_file.exists() or db_file.stat().st_size < 10_000:
+            continue
+        account = "" if path.name == "_default" else path.name
+        try:
+            store.set_request_email(account)
+            marked = store.apply_title_skip_filters()
+            if marked:
+                print(
+                    f"title-filter sweep ({account or 'default'}): "
+                    f"marked {len(marked)} jobs Applied"
+                )
+        except Exception as exc:
+            print(f"title-filter sweep failed ({account or 'default'}): {exc}")
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     email = (sql_db.read_active_email() or "").strip().lower()
+    # Catch older New/Opened rows across accounts (keywords only filtered new fetches before).
+    try:
+        _sweep_title_filters_for_all_accounts()
+    except Exception as exc:
+        print(f"title-filter startup sweep failed: {exc}")
+    store.set_request_email(email)
     Thread(
         target=crawler.sync_on_start, args=(email,), name="job-link-sync", daemon=True
     ).start()
@@ -495,6 +522,7 @@ def jobright_login(body: LoginBody, response: Response) -> dict:
     store.update_state(
         lambda current: current.update(session_id=session_id, email=body.email.strip())
     )
+    store.apply_title_skip_filters()
     return {"ok": True, "email": body.email.strip()}
 
 

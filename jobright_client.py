@@ -14,17 +14,6 @@ WORK_MODEL_LABELS = {1: "On-site", 2: "Remote", 3: "Hybrid"}
 API_BASE = "https://swan-api.jobright.ai"
 SITE_BASE = "https://jobright.ai"
 LINKEDIN_HOSTS = ("linkedin.com", "lnkd.in")
-# Titles containing these keys are auto-sent to Applied like LinkedIn apply links.
-TITLE_SKIP_KEYS = (
-    "account",
-    "lead",
-    "manager",
-    "management",
-    "director",
-    "executive",
-    "execution",
-    "administrator",
-)
 
 HEADERS = {
     "User-Agent": (
@@ -48,17 +37,10 @@ def is_linkedin_url(url: str | None) -> bool:
     return any(host == item or host.endswith("." + item) for item in LINKEDIN_HOSTS)
 
 
-def is_skip_title(title: str | None) -> bool:
-    text = str(title or "").lower()
-    if not text:
-        return False
-    return any(key in text for key in TITLE_SKIP_KEYS)
-
-
 def should_auto_apply(job: dict | None) -> bool:
     if not job:
         return False
-    return is_linkedin_url(job.get("apply_url")) or is_skip_title(job.get("title"))
+    return is_linkedin_url(job.get("apply_url")) or store.is_skip_title(job.get("title"))
 
 
 def auto_apply_source(job: dict | None) -> str:
@@ -66,7 +48,7 @@ def auto_apply_source(job: dict | None) -> str:
         return ""
     if is_linkedin_url(job.get("apply_url")):
         return "linkedin"
-    if is_skip_title(job.get("title")):
+    if store.is_skip_title(job.get("title")):
         return "title-filter"
     return ""
 

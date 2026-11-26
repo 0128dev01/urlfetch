@@ -199,6 +199,13 @@ def _queue_jobright_applies(jobs: list[dict]) -> None:
         _queue_jobright_apply(job_id)
 
 
+def _apply_title_filters(_session_id: str = "") -> int:
+    """Re-check saved jobs so title skip keys also catch older New/Opened rows."""
+    marked = store.apply_title_skip_filters()
+    _queue_jobright_applies(marked)
+    return len(marked)
+
+
 def _session() -> str:
     session_id = store.load_state().get("session_id") or ""
     if not session_id:
@@ -262,6 +269,9 @@ def _full_crawl(session_id: str) -> None:
         _set_status(
             f"Loaded {counts['all']} company links in your selected period.{extra}"
         )
+    title_applied = _apply_title_filters(session_id)
+    if title_applied:
+        linkedin_applied += title_applied
     store.update_state(
         lambda state: state.update(
             has_more=False,
@@ -320,7 +330,10 @@ def _scan_new(session_id: str) -> int:
         position += PAGE_SIZE
     if first_ids:
         store.set_feed_first_page(first_ids, recent_mode)
+    title_applied = _apply_title_filters(session_id)
     extra = ""
+    if title_applied:
+        extra += f" {title_applied} title-filtered links sent to Applied."
     if stop_reason == "first-list":
         extra += " Stopped at last first list."
     elif not recent_mode:
@@ -499,11 +512,14 @@ def sync_on_start(email: str = "") -> None:
         )
         applied, _hidden = _sync_applied(session_id)
         recent = _read_order_state(session_id)
+        title_applied = _apply_title_filters(session_id)
         queued = _queue_unsynced_applied()
         counts = store.counts()
         wanted = "most recent" if store.feed_sort() == "recent" else "recommended"
         seen = "most-recent order" if recent else "not most-recent order"
         extra = ""
+        if title_applied:
+            extra += f" {title_applied} title-filtered links sent to Applied."
         if queued:
             extra += f" {queued} saved Applied links queued to Jobright."
         _set_status(
